@@ -1,0 +1,43 @@
+version: 2.1
+description: "A orb for hugo that build and push"
+jobs:
+  build:
+    docker:
+      - image: reizist/alpine-hugo
+
+    working_directory: ~/hugo
+    steps:
+      - checkout
+      - add_ssh_keys
+      - run:
+          name: git config
+          command: |
+              git config --global user.name $GITHUB_USER
+              git config --global user.email $GITHUB_EMAIL
+      - run:
+          name: git sync
+          command: |
+              git submodule init
+              git submodule update
+
+              git clone -b $GITHUB_BUILD_BRANCH $GITHUB_REPO public
+              rm -rf public/*
+      - run:
+          name: build and push
+          command: |
+              hugo
+              cp -prv .circleci public
+              cd public
+              git add --all
+              git commit -m "[ci skip] publish"
+              git push -f origin $GITHUB_BUILD_BRANCH
+workflows:
+  version: 2
+  deploy:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only:
+                - develop
+

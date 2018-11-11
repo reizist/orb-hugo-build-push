@@ -1,5 +1,12 @@
 version: 2.1
 description: "A orb for hugo that build and push"
+# Required environment variables:
+#
+# - GIT_PUBILSH_BRANCH: publish branch (default: gh-pages)
+# - GIT_BUILD_BRANCH: build branch (default: master)
+# - GIT_USER: git user name
+# - GIT_EMAIL: git user email address
+#
 jobs:
   build:
     docker:
@@ -10,27 +17,49 @@ jobs:
       - checkout
       - add_ssh_keys
       - run:
+          name: checking env
+          command: |
+              if [ -n "$GIT_USER" -o -n "GIT_EMAIL"]; then
+                echo "Set variable GIT_USER, GIT_EMAIL"
+                echo "your variables: GIT_USER:$GIT_USER, GIT_EMAIL:$GIT_EMAIL"
+                exit 1
+              fi
+      - run:
           name: git config
           command: |
-              git config --global user.name $GITHUB_USER
-              git config --global user.email $GITHUB_EMAIL
+              git config --global user.name $GIT_USER
+              git config --global user.email $GIT_EMAIL
       - run:
           name: git sync
           command: |
               git submodule init
               git submodule update
 
-              git clone -b $GITHUB_BUILD_BRANCH $GITHUB_REPO public
-              rm -rf public/*
+              publish_branch=${GIT_PUBLISH_BRANCH:-gh-pages}
+              build_branch=${GIT_BUILD_BRANCH:-master}
+
+              remote=`git ls-remote -h | grep $publish_branch || true`
+              if [ $remote ]; then
+                git init public
+                cd public
+                git checkout -b $build_branch
+                git remote add origin "${CIRCLE_REPOSITORY_URL}"
+                cd ..
+              else
+                git clone -b $build_branch $CIRCLE_REPOSITORY_URL public
+                rm -rf public/*
+              fi
       - run:
           name: build and push
           command: |
+              build_branch=${GIT_BUILD_BRANCH:-master}
+
               hugo
               cp -prv .circleci public
               cd public
               git add --all
               git commit -m "[ci skip] publish"
-              git push -f origin $GITHUB_BUILD_BRANCH
+              git push -f origin $publish_branch
 workflows:
   version: 2
   deploy:
